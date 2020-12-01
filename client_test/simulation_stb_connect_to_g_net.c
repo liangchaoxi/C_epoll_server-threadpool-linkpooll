@@ -51,23 +51,29 @@ int simulation_stb_connect_to_g_net(int port)
 	char recv_buffer[2048] = {0};
 	char send_buffer[1024] = "hello epoll server";
 
-	// create socket
+	
 	socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-	// set server data info
+
+	
 	memset(&server_addr,0,sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_port = htons(port);
 	server_addr.sin_addr.s_addr = inet_addr(G_NET_UPDATE_SERVER_ADDR);
-	// connect
+	
 	err = connect(socket_fd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+	
 	if(err == 0)
 	{
+	
 		// send
 		num = write(socket_fd, (char *)send_buffer, strlen(send_buffer));
 		if (num <= 0) {
 			printf("send error\n");
 			return -1;
 		}
+
+
+		
 	
 		// recv
 		num = recv(socket_fd, recv_buffer, 2048, 0);
@@ -77,11 +83,13 @@ int simulation_stb_connect_to_g_net(int port)
 			connect_total++;
 			return_value = 2;
 		}
+
+		
 		printf("out\n");
 	}
 	else
 	{
-		printf("connect error\n");
+		printf("connect error:%d\n",err);
 		return_value = 1;
 	}
 

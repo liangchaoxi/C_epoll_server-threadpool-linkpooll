@@ -115,6 +115,9 @@ static int thpool_jobqueue_init(thpool_t* tp_p)
 
 static void thpool_thread_do(thpool_thread_parameter *thread_paramter)
 {
+
+   printf("%s start,%s\n", __FUNCTION__,__FILE__);
+
 	thpool_t *tp_p = thread_paramter->thpool;
 	int index = thread_paramter->thread_index;
 	printf("index = %d\n", index);
@@ -149,6 +152,8 @@ static void thpool_thread_do(thpool_thread_parameter *thread_paramter)
         }
     }
     free(thread_paramter);
+	
+	printf("%s end,%s\n", __FUNCTION__,__FILE__);
 }
 
 //get the queue tail
@@ -192,6 +197,7 @@ static void thpool_jobqueue_add(thpool_t *tp_p, thpool_job_t *newjob_p)
 
     newjob_p->next = NULL;
     newjob_p->prev = NULL;
+	
     switch(tp_p->jobqueue->jobN)
     {
         case 0:

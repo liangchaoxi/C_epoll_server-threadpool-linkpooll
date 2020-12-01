@@ -10,7 +10,7 @@
 #include "epoll_connect.h"
 #include "thread_pool.h"
 #include "g_net_update.h"
-#include "database_process.h"
+//#include "database_process.h"
 
 
 #define	CONNECT_TO_SQL_SUCCESS							0
@@ -25,7 +25,7 @@ static pthread_t send_thread_t;
 static int current_connected_total = 0; // the connections number
 static int exit_accept_flag = 0; // is exit the accept
 static int exit_flag = 0; // is exit the epoll wait
-static int port = 8111;
+static int s_port = 8111;
 
 static void closesocket(int fd);
 static void dumpInfo(unsigned char *info, int length);
@@ -44,40 +44,6 @@ static void connect_total_count_opration(BOOL add_or_subract, int value)
 	pthread_mutex_unlock(&connect_total_count_mutex);
 }
 
-static void signal_handler_reboot(int32_t theSignal)
-{
-	int i;
-	int sockfd;
-	char log_str_buf[LOG_STR_BUF_LEN];
-	signal(SIGPIPE, SIG_IGN);
-	if (SIGKILL == theSignal || SIGTERM == theSignal) //we can know when system excute child thread is end
-	{
-		snprintf(log_str_buf, LOG_STR_BUF_LEN, "receive kill signal exit the server.");
-		LOG_INFO(LOG_LEVEL_FATAL, log_str_buf);
-		if (listen_fd != -1)
-		{
-			closesocket(listen_fd);
-			listen_fd = -1;
-		}
-		exit_flag = 1;
-		exit_accept_flag = 1;
-		for (i = 0; i < MAX_EVENTS; i++)
-		{
-			sockfd = get_fd_by_event_index(i);
-			if (sockfd != -1)
-			{
-				closesocket(sockfd);
-			}
-		}
-#if CONNECT_TO_SQL_SUCCESS
-	sql_pool_destroy();
-#endif
-	}
-	else if (SIGPIPE == theSignal)
-	{
-		LOG_INFO(LOG_LEVEL_INFO, "SIGPIPE received.\n");
-	}
-}
 
 static void closesocket(int fd)
 {
@@ -112,6 +78,15 @@ CONFIG_INFO *get_config_info(void)
 	return &config_info;
 }
 /****************************** accept task ******************************************/
+
+
+int create_tcp_connect()
+{
+
+
+}
+
+
 static void *accept_thread(void *arg)
 {
 	int connect_fd = -1;
@@ -126,22 +101,25 @@ static void *accept_thread(void *arg)
 	int epoll_connect_event_index = -1;
 	char log_str_buf[LOG_STR_BUF_LEN] = {0};
 
+
+
+     printf("%s start,%s\n", __FUNCTION__,__FILE__);
+
 	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (-1 == listen_fd) // INVALID_SOCKET
-	{
+
+	if (-1 == listen_fd) {
 		LOG_INFO(LOG_LEVEL_ERROR, "create socket error.\n");
 		return NULL;
 	}
-	//set socket options
-	err = setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
-	if (0 != err)
-	{
+	
+	err = setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));//set socket options
+	if (0 != err){
 		LOG_INFO(LOG_LEVEL_ERROR, "setsockopt SO_REUSEADDR error.\n");
 		return NULL;
 	}
+	
 	err = setsockopt(listen_fd, SOL_SOCKET, SO_RCVBUF, (char*)(&bufsize), sizeof(int));
-	if (0 != err)
-	{
+	if (0 != err){
 		LOG_INFO(LOG_LEVEL_ERROR, "setsockopt SO_RCVBUF error.\n");
 		return NULL;
 	}
@@ -157,21 +135,30 @@ static void *accept_thread(void *arg)
 //	set_non_blocking(listen_fd);
 	bzero(&serveraddr, sizeof(serveraddr));
 	serveraddr.sin_addr.s_addr = INADDR_ANY;
-	serveraddr.sin_port = htons(/*config_info.port*/port); //serveraddr.sin_port  = htons(SERVER_LISTEN_PORT);
+	serveraddr.sin_port = htons(/*config_info.port*/s_port); //serveraddr.sin_port  = htons(SERVER_LISTEN_PORT);
 	serveraddr.sin_family = AF_INET;
 	if (-1 == bind(listen_fd, (struct sockaddr *)&serveraddr, sizeof(serveraddr))) // SOCKET_ERROR
 	{
-		snprintf(log_str_buf, LOG_STR_BUF_LEN, "bind config port %d error.\n", /*config_info.port*/port);
+		snprintf(log_str_buf, LOG_STR_BUF_LEN, "bind config port %d error.\n", /*config_info.port*/s_port);
 		LOG_INFO(LOG_LEVEL_ERROR, log_str_buf);
-		printf("bind config port %d error.\n", /*config_info.port*/port);
+		printf("bind config port %d error.\n", /*config_info.port*/s_port);
 		return NULL;
 	}
-	printf("bind config port %d success.\n", /*config_info.port*/port);
+	printf("bind config port %d success.\n", /*config_info.port*/s_port);
+
 
 	listen(listen_fd, LISTENQ); // 4096
+
+	 printf("listen\n");
+
 	clilen = sizeof(cliaddr);
+
+
+	
 	while (!exit_accept_flag)
 	{
+
+	
 		if (current_connected_total < MAX_EVENTS) // effective
 		{
 			if ((connect_fd = accept(listen_fd, (struct sockaddr *)&clientaddr, &clilen)) < 0)
@@ -191,6 +178,10 @@ static void *accept_thread(void *arg)
 			LOG_INFO(LOG_LEVEL_INDISPENSABLE, log_str_buf);
 			continue;
 		}
+
+
+
+		
 		epoll_connect_event_index = get_epoll_connect_free_event_index();
 		// no free epoll event
 		if (epoll_connect_event_index == -1) // no the free connect event
@@ -247,16 +238,20 @@ static void *accept_thread(void *arg)
 				        inet_ntoa(clientaddr.sin_addr), connect_fd, current_connected_total);
 		LOG_INFO(LOG_LEVEL_INDISPENSABLE, log_str_buf);
 	}
+
 	if (-1 != listen_fd) // out the while then close the socket
 	{
 		closesocket(listen_fd);
 		listen_fd = -1;
 	}
+
+     printf("%s end,%s\n", __FUNCTION__,__FILE__);
+	
 	return NULL;
 }
 
 static int create_accept_task(void)
-{
+{  
 	return pthread_create(&accep_thread_t, NULL, accept_thread, NULL);
 }
 /*************************************************************************/
@@ -377,11 +372,71 @@ void* respons_stb_info(thpool_job_funcion_parameter *parameter, int thread_index
 }
 /*******************************************************************/
 
-int main(int argc, char *argv[])
+void read_config(void)
+{
+	if (read_config_info(&config_info) != 0)
+	{
+		printf("[%s %s %d] read_config_info fail.\n", __FILE__, __FUNCTION__, __LINE__);
+		return -1;
+	}
+	print_config_info(config_info);
+}
+
+void init_log(void)
 {
 	char log_file_name[128] = {0};
+    char log_str_buf[LOG_STR_BUF_LEN];
+	struct rlimit rl;					//Linux下的进程资源的限制（struct rlimit）,详细:http://blog.chinaunix.net/uid-21715511-id-3492835.html
+		
+
+	// init log
+	sprintf(log_file_name, "log_%d", s_port);
+	// for distinguish between different ports
+	set_log_file_name(log_file_name);
+	if (log_init() != 0)
+	{
+		printf("init log error\n");
+		return -1;
+	}
+	log_set_level(config_info.log_level);
+
+	// create fork
+	pid_t pidfd = fork();
+	
+	if (pidfd < 0)
+	{
+		snprintf(log_str_buf, LOG_STR_BUF_LEN, "fork failed! errorcode = %d[%s].\n", errno, strerror(errno));
+		LOG_INFO(LOG_LEVEL_FATAL, log_str_buf);
+		log_close();
+		return (-1);
+	}
+	
+	if (pidfd != 0) //父进程
+	{
+		LOG_INFO(LOG_LEVEL_INFO, "parent fork over.\n");
+		exit(0);
+	}
+	
+	setsid();//linux指令，子进程如果要脱离父进程，不受父进程控制，我们可以用这个setsid命令
+	LOG_INFO(LOG_LEVEL_INFO, "children fork start.\n");
+
+	//set max number of open files(also for tcp connections)
+	rl.rlim_cur = MAX_EVENTS;
+	rl.rlim_max = MAX_EVENTS;
+	setrlimit(RLIMIT_NOFILE, &rl);
+	getrlimit(RLIMIT_NOFILE, &rl);
+	fprintf(stderr, "cur:%d\n", (int)rl.rlim_cur);
+	fprintf(stderr, "max:%d\n", (int)rl.rlim_max);
+
+	snprintf(log_str_buf, LOG_STR_BUF_LEN, "information about rlimit cur:%d max:%d.\n", (int)rl.rlim_cur, (int)rl.rlim_max);
+	LOG_INFO(LOG_LEVEL_INFO, log_str_buf);
+}
+
+
+int main(int argc, char *argv[])
+{
 	char log_str_buf[LOG_STR_BUF_LEN];
-	struct rlimit rl;
+
 	thpool_t *thpool = NULL;
 	time_t now;
 	time_t prevTime, eventTime = 0;
@@ -396,90 +451,41 @@ int main(int argc, char *argv[])
 		printf("pleanse input the port\n");
 		return 0;
 	}
-	port = atoi(argv[1]);
-	// read config info
-	if (read_config_info(&config_info) != 0)
-	{
-		printf("[%s %s %d] read_config_info fail.\n", __FILE__, __FUNCTION__, __LINE__);
-		return -1;
-	}
-	print_config_info(config_info);
+	s_port = atoi(argv[1]);
+	
+    read_config();
 
 	signal(SIGCHLD, SIG_IGN); // Ignore the child to the end of the signal, preventing the zombie process(2015.7.17)
 
-	// init log
-	sprintf(log_file_name, "log_%d", port);
-	// for distinguish between different ports
-	set_log_file_name(log_file_name);
-	if (log_init() != 0)
-	{
-		printf("init log error\n");
-		return -1;
-	}
-	log_set_level(config_info.log_level);
-
-	// create fork
-	pid_t pidfd = fork();
-	if (pidfd < 0)
-	{
-		snprintf(log_str_buf, LOG_STR_BUF_LEN, "fork failed! errorcode = %d[%s].\n", errno, strerror(errno));
-		LOG_INFO(LOG_LEVEL_FATAL, log_str_buf);
-		log_close();
-		return (-1);
-	}
-	if (pidfd != 0)
-	{
-		LOG_INFO(LOG_LEVEL_INFO, "parent fork over.\n");
-		exit(0);
-	}
-	setsid();
-	LOG_INFO(LOG_LEVEL_INFO, "children fork start.\n");
-
-	//set max number of open files(also for tcp connections)
-	rl.rlim_cur = MAX_EVENTS;
-	rl.rlim_max = MAX_EVENTS;
-	setrlimit(RLIMIT_NOFILE, &rl);
-	getrlimit(RLIMIT_NOFILE, &rl);
-	fprintf(stderr, "cur:%d\n", (int)rl.rlim_cur);
-	fprintf(stderr, "max:%d\n", (int)rl.rlim_max);
-	snprintf(log_str_buf, LOG_STR_BUF_LEN, "information about rlimit cur:%d max:%d.\n", (int)rl.rlim_cur, (int)rl.rlim_max);
-	LOG_INFO(LOG_LEVEL_INFO, log_str_buf);
+	init_log();
 
 	sleep(1);
-	signal(SIGKILL, signal_handler_reboot); // register the signal
-	signal(SIGTERM, signal_handler_reboot);
-	signal(SIGPIPE, signal_handler_reboot);
-
+	
 	init_epoll_connect();
-//	g_net_init_mysql(); // connect to the database
-#if CONNECT_TO_SQL_SUCCESS
-	if (0 != sql_pool_create(THREAD_POLL_SIZE))
-	{
-		LOG_INFO(LOG_LEVEL_FATAL, "mysql error.\n");
-		log_close();
-		return -1;
-	}
-#endif
+
+
 	epoll_fd = epoll_create(MAX_FDS); // 1024
-	if (0 >= epoll_fd)
-	{
+
+	if (0 >= epoll_fd){
 		LOG_INFO(LOG_LEVEL_FATAL, "epoll_create error.\n");
 		log_close();
 		return -1;
 	}
 
-	// crate thread pool
+	
 	thpool = thpool_init(THREAD_POLL_SIZE);
-	if (NULL == thpool)
-	{
+
+	if (NULL == thpool){
 		LOG_INFO(LOG_LEVEL_FATAL, "create thread pool error.\n");
 		log_close();
 		return -1;
 	}
+
+	
 	LOG_INFO(LOG_LEVEL_INDISPENSABLE, "thpool_init success.\n");
 
-	// accept the socket connect
-	create_accept_task();
+	
+	create_accept_task();// accept the socket connect
 
 	time(&prevTime);
 	eventTime = prevTime;
@@ -516,7 +522,10 @@ int main(int argc, char *argv[])
 			snprintf(log_str_buf, LOG_STR_BUF_LEN, "pool queque delete job number = %d.\n", delete_pool_job_number);
 			LOG_INFO(LOG_LEVEL_INDISPENSABLE, log_str_buf);
 		}
+
 		epoll_events_number = epoll_wait(epoll_fd, events, MAX_EVENTS, 2000); //2seconds
+
+
 		for (index = 0; index < epoll_events_number; ++index) // deal with the event
 		{
 			connect_socket_fd_temp = events[index].data.fd; // get the socket fd
@@ -527,6 +536,7 @@ int main(int argc, char *argv[])
 				LOG_INFO(LOG_LEVEL_ERROR, log_str_buf);
 				events[index].data.fd = -1;
 			}
+
 			if (events[index].events & EPOLLIN) //have read event
 			{
 				int event_index = -1;
@@ -580,7 +590,7 @@ int main(int argc, char *argv[])
 					}
 				}
 			}
-//			else if (events[index].events & EPOLLOUT) //have read event. Will not reach here
+//			else if (events[index].events & EPOLLOUT) //have write event. Will not reach here
 //			{
 //				//;
 //			}

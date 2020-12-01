@@ -15,7 +15,7 @@
 #include "log.h"
 #include "g_net_update.h"
 #include "thread_pool.h"
-#include "sql_pool.h"
+//#include "sql_pool.h"
 
 
 static POOL_SQL_SOCK sql_sock_pool;

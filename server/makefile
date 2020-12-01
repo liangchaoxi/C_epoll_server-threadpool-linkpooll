@@ -22,7 +22,8 @@ SRC = $(wildcard $(SRCDIR)/*.c)
 # ========================================================================================
 # Make all option.
 LDLIBS = 
-LIBS = -l pthread -lm -L /usr/lib/mysql -lmysqlclient -lz
+#LIBS = -l pthread -lm -L /usr/lib/mysql -lmysqlclient -lz
+LIBS = -l pthread -lm -L  -lz
 
 all: $(TARGET)
 $(TARGET): $(SRC:.cpp=.o)

@@ -17,8 +17,8 @@
 #define SERVER_TIMEOUT									60 * 1 //60S
 
 static CONFIG_INFO config_info;
-static int epoll_fd = -1; // the epoll fd
-static int listen_fd = -1; // the socket fd socket create return
+static int s_epoll_fd = -1; // the epoll fd
+static int s_listen_fd = -1; // the socket fd socket create return
 static pthread_t accep_thread_t;
 static pthread_t send_thread_t;
 
@@ -77,97 +77,114 @@ CONFIG_INFO *get_config_info(void)
 {
 	return &config_info;
 }
-/****************************** accept task ******************************************/
 
 
-int create_tcp_connect()
+
+
+int create_socket_and_listen(int bufsize)
 {
+    int val          = 1;
+    int err          = 0;	
+	socklen_t clilen = 0;
+	
+	struct sockaddr_in serveraddr;
 
+	char log_str_buf[LOG_STR_BUF_LEN] = {0};
+
+	s_listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+	
+		if (-1 == s_listen_fd) {
+			LOG_INFO(LOG_LEVEL_ERROR, "create socket error.\n");
+			return -1;
+		}
+		
+		err = setsockopt(s_listen_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));//set socket options
+		if (0 != err){
+			LOG_INFO(LOG_LEVEL_ERROR, "setsockopt SO_REUSEADDR error.\n");
+			return -1;
+		}
+		
+		err = setsockopt(s_listen_fd, SOL_SOCKET, SO_RCVBUF, (char*)(&bufsize), sizeof(int));
+		if (0 != err){
+			LOG_INFO(LOG_LEVEL_ERROR, "setsockopt SO_RCVBUF error.\n");
+			return -1;
+		}
+	
+		val = 2; //2 minitues
+		err = setsockopt(s_listen_fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &val, sizeof(val));
+		if (0 != err)
+		{
+			LOG_INFO(LOG_LEVEL_ERROR, "setsockopt TCP_DEFER_ACCEPT error.\n");
+			return -1;
+		}
+	
+	//	set_non_blocking(s_listen_fd);
+		bzero(&serveraddr, sizeof(serveraddr));
+		serveraddr.sin_addr.s_addr = INADDR_ANY;
+		serveraddr.sin_port = htons(/*config_info.port*/s_port); //serveraddr.sin_port	= htons(SERVER_LISTEN_PORT);
+		serveraddr.sin_family = AF_INET;
+	
+		if (-1 == bind(s_listen_fd, (struct sockaddr *)&serveraddr, sizeof(serveraddr))) // SOCKET_ERROR
+		{
+			snprintf(log_str_buf, LOG_STR_BUF_LEN, "bind config port %d error.\n", /*config_info.port*/s_port);
+			LOG_INFO(LOG_LEVEL_ERROR, log_str_buf);
+			printf("bind config port %d error.\n", /*config_info.port*/s_port);
+			return -1;
+		}
+		printf("bind config port %d success.\n", /*config_info.port*/s_port);
+	
+	
+		listen(s_listen_fd, LISTENQ); // 4096
+
+		return s_listen_fd;
 
 }
 
 
+
+/****************************** accept task ******************************************/
+
+
+
+
 static void *accept_thread(void *arg)
 {
-	int connect_fd = -1;
+    int bufsize = 32 * 1024; //1024*2048;
+	int connect_fd   = -1;
 	socklen_t clilen = 0;
-	struct sockaddr_in serveraddr;
 	struct sockaddr_in clientaddr;
 	struct sockaddr cliaddr;
 	struct epoll_event ev;
-	int val = 1;
-	int err = 0;
-	int bufsize = 32 * 1024; //1024*2048;
-	int epoll_connect_event_index = -1;
+	int err     = 0;
+	int epoll_connect_event_index     = -1;
 	char log_str_buf[LOG_STR_BUF_LEN] = {0};
 
 
 
      printf("%s start,%s\n", __FUNCTION__,__FILE__);
 
-	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 
-	if (-1 == listen_fd) {
-		LOG_INFO(LOG_LEVEL_ERROR, "create socket error.\n");
-		return NULL;
-	}
-	
-	err = setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));//set socket options
-	if (0 != err){
-		LOG_INFO(LOG_LEVEL_ERROR, "setsockopt SO_REUSEADDR error.\n");
-		return NULL;
-	}
-	
-	err = setsockopt(listen_fd, SOL_SOCKET, SO_RCVBUF, (char*)(&bufsize), sizeof(int));
-	if (0 != err){
-		LOG_INFO(LOG_LEVEL_ERROR, "setsockopt SO_RCVBUF error.\n");
-		return NULL;
-	}
+	create_socket_and_listen(bufsize);
 
-	val = 2; //2 minitues
-	err = setsockopt(listen_fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &val, sizeof(val));
-	if (0 != err)
-	{
-		LOG_INFO(LOG_LEVEL_ERROR, "setsockopt TCP_DEFER_ACCEPT error.\n");
-		return NULL;
-	}
-
-//	set_non_blocking(listen_fd);
-	bzero(&serveraddr, sizeof(serveraddr));
-	serveraddr.sin_addr.s_addr = INADDR_ANY;
-	serveraddr.sin_port = htons(/*config_info.port*/s_port); //serveraddr.sin_port  = htons(SERVER_LISTEN_PORT);
-	serveraddr.sin_family = AF_INET;
-	if (-1 == bind(listen_fd, (struct sockaddr *)&serveraddr, sizeof(serveraddr))) // SOCKET_ERROR
-	{
-		snprintf(log_str_buf, LOG_STR_BUF_LEN, "bind config port %d error.\n", /*config_info.port*/s_port);
-		LOG_INFO(LOG_LEVEL_ERROR, log_str_buf);
-		printf("bind config port %d error.\n", /*config_info.port*/s_port);
-		return NULL;
-	}
-	printf("bind config port %d success.\n", /*config_info.port*/s_port);
-
-
-	listen(listen_fd, LISTENQ); // 4096
-
-	 printf("listen\n");
 
 	clilen = sizeof(cliaddr);
 
 
-	
 	while (!exit_accept_flag)
 	{
 
 	
 		if (current_connected_total < MAX_EVENTS) // effective
 		{
-			if ((connect_fd = accept(listen_fd, (struct sockaddr *)&clientaddr, &clilen)) < 0)
-			{
-				if ((errno != EAGAIN) && (errno != ECONNABORTED) && (errno != EPROTO) && (errno != EINTR))
-				{
+			if ((connect_fd = accept(s_listen_fd, (struct sockaddr *)&clientaddr, &clilen)) < 0){
+
+			
+				if ((errno != EAGAIN) && (errno != ECONNABORTED) && (errno != EPROTO) && (errno != EINTR)){
 					snprintf(log_str_buf, LOG_STR_BUF_LEN, "accept error %d,%s.\n", errno, strerror(errno));
 					LOG_INFO(LOG_LEVEL_ERROR, log_str_buf);
 				}
+
+				
 				continue;
 			}
 		}
@@ -183,6 +200,7 @@ static void *accept_thread(void *arg)
 
 		
 		epoll_connect_event_index = get_epoll_connect_free_event_index();
+
 		// no free epoll event
 		if (epoll_connect_event_index == -1) // no the free connect event
 		{
@@ -206,7 +224,9 @@ static void *accept_thread(void *arg)
 			}
 			continue;
 		}
+		
 		err = setsockopt(connect_fd, SOL_SOCKET, SO_RCVBUF, (char *)(&bufsize), sizeof(int));
+
 		if (0 != err)
 		{
 			snprintf(log_str_buf, LOG_STR_BUF_LEN, "set socket(%d) setsockopt SO_RCVBUF error.\n", connect_fd);
@@ -222,7 +242,7 @@ static void *accept_thread(void *arg)
 		// add epoll event
 		ev.data.fd = connect_fd;
 		ev.events = EPOLLIN | EPOLLET; // set epoll event type
-		if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, connect_fd, &ev) == -1)
+		if (epoll_ctl(s_epoll_fd, EPOLL_CTL_ADD, connect_fd, &ev) == -1)
 		{
 			snprintf(log_str_buf, LOG_STR_BUF_LEN, "EPOLL_CTL_ADD %d,%s.\n", errno, strerror(errno));
 			LOG_INFO(LOG_LEVEL_ERROR, log_str_buf);
@@ -239,10 +259,10 @@ static void *accept_thread(void *arg)
 		LOG_INFO(LOG_LEVEL_INDISPENSABLE, log_str_buf);
 	}
 
-	if (-1 != listen_fd) // out the while then close the socket
+	if (-1 != s_listen_fd) // out the while then close the socket
 	{
-		closesocket(listen_fd);
-		listen_fd = -1;
+		closesocket(s_listen_fd);
+		s_listen_fd = -1;
 	}
 
      printf("%s end,%s\n", __FUNCTION__,__FILE__);
@@ -372,7 +392,7 @@ void* respons_stb_info(thpool_job_funcion_parameter *parameter, int thread_index
 }
 /*******************************************************************/
 
-void read_config(void)
+int read_config(void)
 {
 	if (read_config_info(&config_info) != 0)
 	{
@@ -382,7 +402,7 @@ void read_config(void)
 	print_config_info(config_info);
 }
 
-void init_log(void)
+int init_log(void)
 {
 	char log_file_name[128] = {0};
     char log_str_buf[LOG_STR_BUF_LEN];
@@ -464,9 +484,9 @@ int main(int argc, char *argv[])
 	init_epoll_connect();
 
 
-	epoll_fd = epoll_create(MAX_FDS); // 1024
+	s_epoll_fd = epoll_create(MAX_FDS); // 1024
 
-	if (0 >= epoll_fd){
+	if (0 >= s_epoll_fd){
 		LOG_INFO(LOG_LEVEL_FATAL, "epoll_create error.\n");
 		log_close();
 		return -1;
@@ -505,7 +525,7 @@ int main(int argc, char *argv[])
 						snprintf(log_str_buf, LOG_STR_BUF_LEN, "Epoll event[%d] timeout closed and fd= %d.\n", index, connect_socket_fd_temp);
 						LOG_INFO(LOG_LEVEL_INDISPENSABLE, log_str_buf);
 						free_event_by_index(index);
-						if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, connect_socket_fd_temp, &ev) == -1)
+						if (epoll_ctl(s_epoll_fd, EPOLL_CTL_DEL, connect_socket_fd_temp, &ev) == -1)
 						{
 							snprintf(log_str_buf, LOG_STR_BUF_LEN, "EPOLL_CTL_DEL %d,%s.\n", errno, strerror(errno));
 							LOG_INFO(LOG_LEVEL_ERROR, log_str_buf);
@@ -523,14 +543,14 @@ int main(int argc, char *argv[])
 			LOG_INFO(LOG_LEVEL_INDISPENSABLE, log_str_buf);
 		}
 
-		epoll_events_number = epoll_wait(epoll_fd, events, MAX_EVENTS, 2000); //2seconds
+		epoll_events_number = epoll_wait(s_epoll_fd, events, MAX_EVENTS, 2000); //2seconds
 
 
 		for (index = 0; index < epoll_events_number; ++index) // deal with the event
 		{
 			connect_socket_fd_temp = events[index].data.fd; // get the socket fd
 			// delete epoll event
-			if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[index].data.fd, &ev) == -1)
+			if (epoll_ctl(s_epoll_fd, EPOLL_CTL_DEL, events[index].data.fd, &ev) == -1)
 			{
 				snprintf(log_str_buf, LOG_STR_BUF_LEN, "EPOLL_CTL_DEL %d,%s.\n", errno, strerror(errno));
 				LOG_INFO(LOG_LEVEL_ERROR, log_str_buf);
@@ -615,10 +635,10 @@ int main(int argc, char *argv[])
 		}
 	}
 	log_close();
-	if (listen_fd != -1)
+	if (s_listen_fd != -1)
 	{
-		closesocket(listen_fd);
-		listen_fd = -1;
+		closesocket(s_listen_fd);
+		s_listen_fd = -1;
 	}
 
 #if CONNECT_TO_SQL_SUCCESS

@@ -31,5 +31,8 @@ void free_event_by_index(int index);
 int get_fd_by_event_index(int index);
 time_t get_event_connect_time_by_index(int index);
 char *get_client_addr_by_index(int index);
+void init_epoll_connect_by_index(int iEvent, int iConnectFD, char *uiClientIP);
+
+
 
 #endif /* EPOLL_CONNECT_H_ */

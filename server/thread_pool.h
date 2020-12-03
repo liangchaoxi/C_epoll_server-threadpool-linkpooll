@@ -60,7 +60,7 @@ typedef struct _thpool_thread_parameter{
 
 
 thpool_t*  thpool_init(int thread_pool_numbers);
-int thpool_add_work(thpool_t* tp_p, void *(*function_p)(void*arg, int index), /*void *arg_p*/int socket_fd, char *recev_buffer);
+int thpool_add_work(thpool_t* tp_p, void *(*function_p)(void *arg, int index), /*void *arg_p*/int socket_fd, char *recev_buffer);
 void thpool_destroy(thpool_t* tp_p);
 int get_jobqueue_number(thpool_t* tp_p);
 int delete_timeout_job(thpool_t* tp_p, int time_out);

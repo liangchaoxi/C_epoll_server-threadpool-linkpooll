@@ -10,14 +10,14 @@ INCLUDEDIR = /usr/local/include
 # ========================================================================================
 # Compile flags
 CPPFLAGS = 
-CC=gcc
+CC=g++
 
 # ========================================================================================
 # TARGET/Source definitions
 SRCDIR = .
 TARGET = epoll_server
 OBJS = $(TARGET).o
-SRC = $(wildcard $(SRCDIR)/*.c)
+SRC = $(wildcard $(SRCDIR)/*.cpp)
 
 # ========================================================================================
 # Make all option.
